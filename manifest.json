@@ -12,8 +12,8 @@
         "changelog": "Automated release",
         "targetAbi": "10.11.0.0",
         "sourceUrl": "https://github.com/Mairik4090/WatchMatch/releases/download/v0.1.0.4/Jellyfin.Plugin.WatchMatch.zip",
-        "checksum": "5743B28BCC3C0CEA9226775F9D504BC9",
-        "timestamp": "2026-05-11T22:56:06Z"
+        "checksum": "62591B8A3547D2A20C394445388D81B7",
+        "timestamp": "2026-05-11T22:57:14Z"
       },
       {
         "version": "0.1.0.3",
