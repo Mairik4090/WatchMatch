@@ -2,11 +2,15 @@
 bin/
 obj/
 TestResults/
+artifacts/
 *.nupkg
 
 # Local Jellyfin source checkouts used as implementation references
 jellyfin-src/
 jellyfin-web-src/
+
+# Local Docker runtime config with machine-specific volume IDs and paths
+docker-compose.yml
 
 # Editor/system files
 .vs/
