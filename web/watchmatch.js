@@ -19,9 +19,21 @@
         getCurrentUserId() {
             return this.getApiClient().getCurrentUserId();
         },
-        getCurrentGroupId() {
-            const manager = window.SyncPlay?.Manager || window.__watchMatchSyncPlayManager;
-            return manager?.getGroupInfo?.()?.GroupId || null;
+        async getCurrentGroupId() {
+            try {
+                // Alle Gruppen holen
+                const groups = await this.ajax('SyncPlay/List', 'GET');
+                if (!groups?.length) return null;
+                // Aktuellen Username aus Session holen
+                const sessions = await this.ajax(
+                    'Sessions?ControllableByUserId=' + this.getCurrentUserId(), 'GET'
+                );
+                const me = sessions?.find(s => s.DeviceId === this.getApiClient().deviceId());
+                if (!me) return null;
+                // Gruppe finden wo Username in Participants ist
+                const myGroup = groups.find(g => g.Participants?.includes(me.UserName));
+                return myGroup?.GroupId || null;
+            } catch { return null; }
         },
         async setSyncPlayQueue(movieId) {
             const apiClient = this.getApiClient();
@@ -91,7 +103,7 @@
     async function refreshButton() {
         ensureUi();
         const button = document.querySelector('.watchmatch-launch');
-        const groupId = adapter.getCurrentGroupId();
+        const groupId = await adapter.getCurrentGroupId();
         state.currentGroupId = groupId;
         if (!groupId) {
             button.classList.remove('is-visible');
@@ -115,7 +127,7 @@
     }
 
     async function openWatchMatch() {
-        state.currentGroupId = adapter.getCurrentGroupId();
+        state.currentGroupId = await adapter.getCurrentGroupId();
         if (!state.currentGroupId) return;
         ensureUi();
         document.querySelector('.watchmatch-modal').classList.add('is-open');

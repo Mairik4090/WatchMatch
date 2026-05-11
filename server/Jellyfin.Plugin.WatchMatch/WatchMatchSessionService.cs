@@ -72,13 +72,7 @@ public sealed class WatchMatchSessionService
             throw new UnauthorizedAccessException("WatchMatch requires an authenticated Jellyfin user.");
         }
 
-        var session = await _sessionManager.LogSessionActivity(
-            auth.Client ?? "Jellyfin Web",
-            auth.Version ?? "unknown",
-            auth.DeviceId ?? "unknown",
-            auth.Device ?? "unknown",
-            httpContext.Connection.RemoteIpAddress?.ToString() ?? string.Empty,
-            auth.User).ConfigureAwait(false);
+        var session = System.Linq.Enumerable.FirstOrDefault(_sessionManager.Sessions, s => s.DeviceId == auth.DeviceId);
 
         return session ?? throw new KeyNotFoundException("Session not found.");
     }
