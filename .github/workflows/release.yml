@@ -76,18 +76,24 @@ jobs:
           echo "value=${CHECKSUM}" >> "${GITHUB_OUTPUT}"
 
       - name: Update plugin repository manifest
-        shell: pwsh
+        shell: bash
         run: |
-          $manifestPath = "manifest.json"
-          $manifest = Get-Content $manifestPath -Raw | ConvertFrom-Json -NoEnumerate
-          $version = $manifest[0].versions[0]
-          $version.version = "${{ steps.meta.outputs.version }}"
-          $version.changelog = "Initial WatchMatch release for Jellyfin 10.11.x."
-          $version.targetAbi = "10.11.0.0"
-          $version.sourceUrl = "https://github.com/${{ github.repository }}/releases/download/${{ steps.meta.outputs.tag }}/${{ steps.meta.outputs.asset }}"
-          $version.checksum = "${{ steps.checksum.outputs.value }}"
-          $version.timestamp = (Get-Date).ToUniversalTime().ToString("yyyy-MM-ddTHH:mm:ssZ")
-          @($manifest) | ConvertTo-Json -Depth 10 | Set-Content $manifestPath -Encoding utf8
+          node <<'NODE'
+          const fs = require('fs');
+          const manifestPath = 'manifest.json';
+          const manifest = JSON.parse(fs.readFileSync(manifestPath, 'utf8'));
+          if (!Array.isArray(manifest)) {
+            throw new Error('Jellyfin plugin repository manifest must be a JSON array.');
+          }
+          const version = manifest[0].versions[0];
+          version.version = '${{ steps.meta.outputs.version }}';
+          version.changelog = 'Initial WatchMatch release for Jellyfin 10.11.x.';
+          version.targetAbi = '10.11.0.0';
+          version.sourceUrl = 'https://github.com/${{ github.repository }}/releases/download/${{ steps.meta.outputs.tag }}/${{ steps.meta.outputs.asset }}';
+          version.checksum = '${{ steps.checksum.outputs.value }}';
+          version.timestamp = new Date().toISOString().replace(/\.\d{3}Z$/, 'Z');
+          fs.writeFileSync(manifestPath, JSON.stringify(manifest, null, 2) + '\n');
+          NODE
 
       - name: Commit updated manifest
         shell: bash
