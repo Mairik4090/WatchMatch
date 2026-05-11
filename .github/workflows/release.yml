@@ -71,7 +71,7 @@ jobs:
         shell: pwsh
         run: |
           $manifestPath = "manifest.json"
-          $manifest = Get-Content $manifestPath -Raw | ConvertFrom-Json
+          $manifest = Get-Content $manifestPath -Raw | ConvertFrom-Json -NoEnumerate
           $version = $manifest[0].versions[0]
           $version.version = "${{ steps.meta.outputs.version }}"
           $version.changelog = "Initial WatchMatch release for Jellyfin 10.11.x."
@@ -79,7 +79,7 @@ jobs:
           $version.sourceUrl = "https://github.com/${{ github.repository }}/releases/download/${{ steps.meta.outputs.tag }}/${{ steps.meta.outputs.asset }}"
           $version.checksum = "${{ steps.checksum.outputs.value }}"
           $version.timestamp = (Get-Date).ToUniversalTime().ToString("yyyy-MM-ddTHH:mm:ssZ")
-          $manifest | ConvertTo-Json -Depth 10 | Set-Content $manifestPath -Encoding utf8
+          @($manifest) | ConvertTo-Json -Depth 10 | Set-Content $manifestPath -Encoding utf8
 
       - name: Commit updated manifest
         shell: bash
