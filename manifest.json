@@ -8,12 +8,12 @@
     "category": "General",
     "versions": [
       {
-        "version": "0.1.0.1",
+        "version": "0.1.0.2",
         "changelog": "Initial WatchMatch release for Jellyfin 10.11.x.",
         "targetAbi": "10.11.0.0",
-        "sourceUrl": "https://github.com/Mairik4090/WatchMatch/releases/download/v0.1.0.1/Jellyfin.Plugin.WatchMatch.zip",
-        "checksum": "3EC2452F8C6868CD7FAF47AB148CC091",
-        "timestamp": "2026-05-11T21:05:29Z"
+        "sourceUrl": "https://github.com/Mairik4090/WatchMatch/releases/download/v0.1.0.2/Jellyfin.Plugin.WatchMatch.zip",
+        "checksum": "D11CC2138CA1CDD052FD0DA87B0667AA",
+        "timestamp": "2026-05-11T21:35:00Z"
       }
     ]
   }

@@ -73,7 +73,7 @@ The web script intentionally keeps Jellyfin Web internals behind `window.watchma
 
 ## Build
 
-The project targets `net10.0` and pins Jellyfin package references to `10.11.0`.
+The project targets `net9.0` and pins Jellyfin package references to `10.11.0`.
 
 ```powershell
 dotnet restore WatchMatch.sln

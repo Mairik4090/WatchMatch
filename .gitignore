@@ -2,6 +2,7 @@
 bin/
 obj/
 TestResults/
+artifacts/
 *.nupkg
 
 # Local Jellyfin source checkouts used as implementation references
