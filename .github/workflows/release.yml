@@ -54,11 +54,19 @@ jobs:
       - name: Publish plugin
         run: dotnet publish server/Jellyfin.Plugin.WatchMatch/Jellyfin.Plugin.WatchMatch.csproj --configuration Release --no-restore --output artifacts/package
 
+      - name: Keep only plugin assembly artifacts
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Force -Path artifacts/plugin | Out-Null
+          Copy-Item artifacts/package/Jellyfin.Plugin.WatchMatch.dll artifacts/plugin/
+          Copy-Item artifacts/package/Jellyfin.Plugin.WatchMatch.xml artifacts/plugin/ -ErrorAction SilentlyContinue
+          Copy-Item artifacts/package/Jellyfin.Plugin.WatchMatch.pdb artifacts/plugin/ -ErrorAction SilentlyContinue
+
       - name: Package plugin zip
         shell: pwsh
         run: |
           New-Item -ItemType Directory -Force -Path artifacts/release | Out-Null
-          Compress-Archive -Path artifacts/package/* -DestinationPath "artifacts/release/${{ steps.meta.outputs.asset }}" -Force
+          Compress-Archive -Path artifacts/plugin/* -DestinationPath "artifacts/release/${{ steps.meta.outputs.asset }}" -Force
 
       - name: Compute checksum
         id: checksum
