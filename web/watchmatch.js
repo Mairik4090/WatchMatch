@@ -49,15 +49,20 @@
         token() {
             return this.getApiClient().accessToken();
         },
-        ajax(path, method, body) {
+        async ajax(path, method, body) {
             const apiClient = this.getApiClient();
-            return apiClient.ajax({
+            const response = await apiClient.ajax({
                 url: apiClient.getUrl(path),
                 type: method,
                 contentType: 'application/json',
                 dataType: 'json',
                 data: body ? JSON.stringify(body) : undefined
             });
+            // Jellyfin 10.9+ returns a fetch Response, older versions return the parsed JSON directly
+            if (response && typeof response.json === 'function') {
+                return response.json();
+            }
+            return response;
         }
     };
 
