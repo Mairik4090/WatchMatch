@@ -1,0 +1,21 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <AssemblyName>Jellyfin.Plugin.WatchMatch</AssemblyName>
+    <RootNamespace>Jellyfin.Plugin.WatchMatch</RootNamespace>
+    <GenerateDocumentationFile>true</GenerateDocumentationFile>
+    <CopyLocalLockFileAssemblies>false</CopyLocalLockFileAssemblies>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Jellyfin.Controller" Version="10.11.0" />
+    <PackageReference Include="Jellyfin.Model" Version="10.11.0" />
+    <PackageReference Include="Jellyfin.Common" Version="10.11.0" />
+    <FrameworkReference Include="Microsoft.AspNetCore.App" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <EmbeddedResource Include="Configuration\config.html" />
+    <EmbeddedResource Include="..\..\web\watchmatch.css" Link="Assets\watchmatch.css" LogicalName="Jellyfin.Plugin.WatchMatch.Assets.watchmatch.css" />
+    <EmbeddedResource Include="..\..\web\watchmatch.js" Link="Assets\watchmatch.js" LogicalName="Jellyfin.Plugin.WatchMatch.Assets.watchmatch.js" />
+  </ItemGroup>
+</Project>

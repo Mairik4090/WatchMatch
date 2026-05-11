@@ -1,0 +1,24 @@
+Microsoft Visual Studio Solution File, Format Version 12.00
+# Visual Studio Version 17
+VisualStudioVersion = 17.0.31903.59
+MinimumVisualStudioVersion = 10.0.40219.1
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Jellyfin.Plugin.WatchMatch", "server\Jellyfin.Plugin.WatchMatch\Jellyfin.Plugin.WatchMatch.csproj", "{708C0411-A026-43C1-97D7-E2E0924ED9DA}"
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Jellyfin.Plugin.WatchMatch.Tests", "tests\Jellyfin.Plugin.WatchMatch.Tests\Jellyfin.Plugin.WatchMatch.Tests.csproj", "{CF3F0808-78D8-4D2E-8D26-13017B0116D7}"
+EndProject
+Global
+	GlobalSection(SolutionConfigurationPlatforms) = preSolution
+		Debug|Any CPU = Debug|Any CPU
+		Release|Any CPU = Release|Any CPU
+	EndGlobalSection
+	GlobalSection(ProjectConfigurationPlatforms) = postSolution
+		{708C0411-A026-43C1-97D7-E2E0924ED9DA}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{708C0411-A026-43C1-97D7-E2E0924ED9DA}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{708C0411-A026-43C1-97D7-E2E0924ED9DA}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{708C0411-A026-43C1-97D7-E2E0924ED9DA}.Release|Any CPU.Build.0 = Release|Any CPU
+		{CF3F0808-78D8-4D2E-8D26-13017B0116D7}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{CF3F0808-78D8-4D2E-8D26-13017B0116D7}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{CF3F0808-78D8-4D2E-8D26-13017B0116D7}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{CF3F0808-78D8-4D2E-8D26-13017B0116D7}.Release|Any CPU.Build.0 = Release|Any CPU
+	EndGlobalSection
+EndGlobal

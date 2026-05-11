@@ -1,0 +1,204 @@
+:root {
+    --watchmatch-bg: #15191d;
+    --watchmatch-panel: #20262c;
+    --watchmatch-text: #f4f7f8;
+    --watchmatch-muted: #a7b2b8;
+    --watchmatch-line: rgba(255, 255, 255, .14);
+    --watchmatch-approve: #2fbf7a;
+    --watchmatch-reject: #e15d5d;
+    --watchmatch-accent: #e0b45a;
+}
+
+.watchmatch-launch {
+    position: fixed;
+    right: 24px;
+    bottom: 84px;
+    z-index: 1299;
+    display: none;
+    align-items: center;
+    gap: 10px;
+    height: 44px;
+    padding: 0 16px;
+    border: 1px solid var(--watchmatch-line);
+    border-radius: 8px;
+    color: var(--watchmatch-text);
+    background: #253039;
+    box-shadow: 0 10px 32px rgba(0, 0, 0, .34);
+    font: inherit;
+    cursor: pointer;
+}
+
+.watchmatch-launch.is-visible {
+    display: inline-flex;
+}
+
+.watchmatch-launch:disabled {
+    opacity: .58;
+    cursor: default;
+}
+
+.watchmatch-modal {
+    position: fixed;
+    inset: 0;
+    z-index: 1300;
+    display: none;
+    color: var(--watchmatch-text);
+    background: rgba(8, 11, 14, .74);
+}
+
+.watchmatch-modal.is-open {
+    display: grid;
+    place-items: center;
+}
+
+.watchmatch-shell {
+    width: min(960px, calc(100vw - 32px));
+    min-height: min(720px, calc(100vh - 32px));
+    display: grid;
+    grid-template-rows: auto 1fr;
+    background: var(--watchmatch-bg);
+    border: 1px solid var(--watchmatch-line);
+    border-radius: 8px;
+    overflow: hidden;
+    box-shadow: 0 20px 80px rgba(0, 0, 0, .5);
+}
+
+.watchmatch-topbar {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+    padding: 14px 16px;
+    border-bottom: 1px solid var(--watchmatch-line);
+    background: #11161a;
+}
+
+.watchmatch-title {
+    font-size: 18px;
+    font-weight: 650;
+}
+
+.watchmatch-close,
+.watchmatch-icon-button {
+    width: 36px;
+    height: 36px;
+    border: 1px solid var(--watchmatch-line);
+    border-radius: 8px;
+    color: var(--watchmatch-text);
+    background: transparent;
+    cursor: pointer;
+}
+
+.watchmatch-body {
+    display: grid;
+    place-items: center;
+    padding: 24px;
+}
+
+.watchmatch-card {
+    width: min(360px, 78vw);
+    min-height: 560px;
+    display: grid;
+    grid-template-rows: 1fr auto;
+    background: var(--watchmatch-panel);
+    border: 1px solid var(--watchmatch-line);
+    border-radius: 8px;
+    overflow: hidden;
+}
+
+.watchmatch-poster {
+    width: 100%;
+    min-height: 420px;
+    background: #0f1316 center / cover no-repeat;
+}
+
+.watchmatch-card-body {
+    padding: 16px;
+}
+
+.watchmatch-movie-title {
+    margin: 0 0 6px;
+    font-size: 22px;
+    line-height: 1.16;
+}
+
+.watchmatch-meta {
+    color: var(--watchmatch-muted);
+    font-size: 14px;
+    line-height: 1.5;
+}
+
+.watchmatch-seen {
+    margin-top: 10px;
+    color: var(--watchmatch-accent);
+    font-size: 13px;
+}
+
+.watchmatch-actions {
+    display: flex;
+    gap: 12px;
+    justify-content: center;
+    margin-top: 18px;
+}
+
+.watchmatch-action {
+    min-width: 124px;
+    height: 44px;
+    border: 0;
+    border-radius: 8px;
+    color: white;
+    font: inherit;
+    font-weight: 650;
+    cursor: pointer;
+}
+
+.watchmatch-action.reject {
+    background: var(--watchmatch-reject);
+}
+
+.watchmatch-action.approve,
+.watchmatch-action.play {
+    background: var(--watchmatch-approve);
+}
+
+.watchmatch-action.neutral {
+    color: var(--watchmatch-text);
+    background: #36424b;
+}
+
+.watchmatch-status {
+    max-width: 520px;
+    color: var(--watchmatch-muted);
+    text-align: center;
+    line-height: 1.5;
+}
+
+.watchmatch-toggle {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    color: var(--watchmatch-muted);
+    font-size: 13px;
+}
+
+@media (max-width: 640px) {
+    .watchmatch-launch {
+        right: 16px;
+        bottom: 72px;
+    }
+
+    .watchmatch-shell {
+        width: 100vw;
+        min-height: 100vh;
+        border: 0;
+        border-radius: 0;
+    }
+
+    .watchmatch-body {
+        padding: 16px;
+    }
+
+    .watchmatch-card {
+        min-height: 520px;
+    }
+}

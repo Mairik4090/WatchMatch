@@ -1,0 +1,15 @@
+{
+  "name": "WatchMatch Jellyfin Web injection",
+  "description": "Injects WatchMatch CSS/JS into Jellyfin Web. Adapt this descriptor to the installed File Transformation plugin version.",
+  "target": "index.html",
+  "operations": [
+    {
+      "type": "append-head",
+      "content": "<link rel=\"stylesheet\" href=\"/WatchMatch/Assets/watchmatch.css\">"
+    },
+    {
+      "type": "append-body",
+      "content": "<script src=\"/WatchMatch/Assets/watchmatch.js\"></script>"
+    }
+  ]
+}

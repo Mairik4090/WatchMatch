@@ -1,0 +1,12 @@
+name: WatchMatch
+guid: 2ec90ca2-b8ab-40e8-9ddf-7502c27e9a44
+version: 0.1.0.0
+targetAbi: 10.11.0.0
+framework: net10.0
+owner: local
+overview: Small-group movie matching for Jellyfin SyncPlay.
+description: Adds a WatchMatch flow to Jellyfin Web so SyncPlay groups can swipe through movies and agree on playback.
+category: General
+artifacts:
+  - server/Jellyfin.Plugin.WatchMatch/bin/Release/net10.0/Jellyfin.Plugin.WatchMatch.dll
+changelog: Initial v1 scaffold for Jellyfin 10.11.x.
