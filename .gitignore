@@ -8,6 +8,9 @@ TestResults/
 jellyfin-src/
 jellyfin-web-src/
 
+# Local Docker runtime config with machine-specific volume IDs and paths
+docker-compose.yml
+
 # Editor/system files
 .vs/
 .vscode/
