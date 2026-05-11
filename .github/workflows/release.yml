@@ -1,0 +1,106 @@
+name: Build Jellyfin Plugin Release
+
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: Jellyfin plugin version
+        required: true
+        default: 0.1.0.0
+      tag:
+        description: GitHub release tag
+        required: true
+        default: v0.1.0.0
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Resolve release metadata
+        id: meta
+        shell: bash
+        run: |
+          if [[ "${GITHUB_REF_TYPE}" == "tag" ]]; then
+            TAG="${GITHUB_REF_NAME}"
+            VERSION="${TAG#v}"
+          else
+            TAG="${{ github.event.inputs.tag }}"
+            VERSION="${{ github.event.inputs.version }}"
+          fi
+          echo "tag=${TAG}" >> "${GITHUB_OUTPUT}"
+          echo "version=${VERSION}" >> "${GITHUB_OUTPUT}"
+          echo "asset=Jellyfin.Plugin.WatchMatch.zip" >> "${GITHUB_OUTPUT}"
+
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          ref: main
+          fetch-depth: 0
+
+      - name: Setup .NET
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 10.0.x
+
+      - name: Restore
+        run: dotnet restore WatchMatch.sln
+
+      - name: Test
+        run: dotnet test WatchMatch.sln --configuration Release --no-restore
+
+      - name: Publish plugin
+        run: dotnet publish server/Jellyfin.Plugin.WatchMatch/Jellyfin.Plugin.WatchMatch.csproj --configuration Release --no-restore --output artifacts/package
+
+      - name: Package plugin zip
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Force -Path artifacts/release | Out-Null
+          Compress-Archive -Path artifacts/package/* -DestinationPath "artifacts/release/${{ steps.meta.outputs.asset }}" -Force
+
+      - name: Compute checksum
+        id: checksum
+        shell: bash
+        run: |
+          CHECKSUM="$(md5sum "artifacts/release/${{ steps.meta.outputs.asset }}" | awk '{print toupper($1)}')"
+          echo "value=${CHECKSUM}" >> "${GITHUB_OUTPUT}"
+
+      - name: Update plugin repository manifest
+        shell: pwsh
+        run: |
+          $manifestPath = "manifest.json"
+          $manifest = Get-Content $manifestPath -Raw | ConvertFrom-Json
+          $version = $manifest[0].versions[0]
+          $version.version = "${{ steps.meta.outputs.version }}"
+          $version.changelog = "Initial WatchMatch release for Jellyfin 10.11.x."
+          $version.targetAbi = "10.11.0.0"
+          $version.sourceUrl = "https://github.com/${{ github.repository }}/releases/download/${{ steps.meta.outputs.tag }}/${{ steps.meta.outputs.asset }}"
+          $version.checksum = "${{ steps.checksum.outputs.value }}"
+          $version.timestamp = (Get-Date).ToUniversalTime().ToString("yyyy-MM-ddTHH:mm:ssZ")
+          $manifest | ConvertTo-Json -Depth 10 | Set-Content $manifestPath -Encoding utf8
+
+      - name: Commit updated manifest
+        shell: bash
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add manifest.json
+          if git diff --cached --quiet; then
+            echo "Manifest already current."
+          else
+            git commit -m "Update plugin manifest for ${{ steps.meta.outputs.tag }}"
+            git push origin main
+          fi
+
+      - name: Create GitHub release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release delete "${{ steps.meta.outputs.tag }}" --yes --cleanup-tag || true
+          git tag -f "${{ steps.meta.outputs.tag }}"
+          git push origin "${{ steps.meta.outputs.tag }}" --force
+          gh release create "${{ steps.meta.outputs.tag }}" "artifacts/release/${{ steps.meta.outputs.asset }}" \
+            --title "WatchMatch ${{ steps.meta.outputs.version }}" \
+            --notes "Initial WatchMatch release for Jellyfin 10.11.x."

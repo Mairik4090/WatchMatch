@@ -15,6 +15,16 @@ This repository contains two pieces:
 - Working Jellyfin SyncPlay and WebSockets are required for the final Play action.
 - WatchMatch state is in-memory only. Sessions do not survive Jellyfin/plugin restarts.
 
+## Install Through Jellyfin Plugin Repositories
+
+Add this repository URL in Jellyfin Admin Dashboard -> Plugins -> Repositories:
+
+```text
+https://raw.githubusercontent.com/Mairik4090/WatchMatch/main/manifest.json
+```
+
+Then open the plugin catalog and install WatchMatch like any other Jellyfin plugin.
+
 ## What WatchMatch Does
 
 1. A WatchMatch button appears while the user is in a SyncPlay group.
