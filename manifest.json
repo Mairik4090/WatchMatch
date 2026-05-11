@@ -8,6 +8,14 @@
     "category": "General",
     "versions": [
       {
+        "version": "0.1.0.3",
+        "changelog": "Fix WatchMatch session and group ID retrieval.",
+        "targetAbi": "10.11.0.0",
+        "sourceUrl": "https://github.com/Mairik4090/WatchMatch/releases/download/v0.1.0.3/Jellyfin.Plugin.WatchMatch.zip",
+        "checksum": "UPDATE_ON_RELEASE",
+        "timestamp": "2026-05-12T00:00:00Z"
+      },
+      {
         "version": "0.1.0.2",
         "changelog": "Initial WatchMatch release for Jellyfin 10.11.x.",
         "targetAbi": "10.11.0.0",
