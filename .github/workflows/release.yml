@@ -1,16 +1,22 @@
 name: Build Jellyfin Plugin Release
 
 on:
+  push:
+    branches:
+      - main
+    paths:
+      - 'server/**'
+      - 'web/**'
+      - 'manifest.json'
+      - 'build.yaml'
   workflow_dispatch:
     inputs:
       version:
         description: Jellyfin plugin version
-        required: true
-        default: 0.1.0.0
+        required: false
       tag:
         description: GitHub release tag
-        required: true
-        default: v0.1.0.0
+        required: false
 
 permissions:
   contents: write
@@ -19,26 +25,26 @@ jobs:
   release:
     runs-on: ubuntu-latest
     steps:
-      - name: Resolve release metadata
-        id: meta
-        shell: bash
-        run: |
-          if [[ "${GITHUB_REF_TYPE}" == "tag" ]]; then
-            TAG="${GITHUB_REF_NAME}"
-            VERSION="${TAG#v}"
-          else
-            TAG="${{ github.event.inputs.tag }}"
-            VERSION="${{ github.event.inputs.version }}"
-          fi
-          echo "tag=${TAG}" >> "${GITHUB_OUTPUT}"
-          echo "version=${VERSION}" >> "${GITHUB_OUTPUT}"
-          echo "asset=Jellyfin.Plugin.WatchMatch.zip" >> "${GITHUB_OUTPUT}"
-
       - name: Checkout
         uses: actions/checkout@v4
         with:
           ref: main
           fetch-depth: 0
+
+      - name: Resolve release metadata
+        id: meta
+        shell: bash
+        run: |
+          if [[ "${{ github.event_name }}" == "workflow_dispatch" && -n "${{ github.event.inputs.version }}" ]]; then
+            VERSION="${{ github.event.inputs.version }}"
+            TAG="${{ github.event.inputs.tag }}"
+          else
+            VERSION=$(grep -oP '(?<=<Version>).*?(?=</Version>)' server/Jellyfin.Plugin.WatchMatch/Jellyfin.Plugin.WatchMatch.csproj)
+            TAG="v$VERSION"
+          fi
+          echo "tag=${TAG}" >> "${GITHUB_OUTPUT}"
+          echo "version=${VERSION}" >> "${GITHUB_OUTPUT}"
+          echo "asset=Jellyfin.Plugin.WatchMatch.zip" >> "${GITHUB_OUTPUT}"
 
       - name: Setup .NET
         uses: actions/setup-dotnet@v4
@@ -85,13 +91,26 @@ jobs:
           if (!Array.isArray(manifest)) {
             throw new Error('Jellyfin plugin repository manifest must be a JSON array.');
           }
-          const version = manifest[0].versions[0];
-          version.version = '${{ steps.meta.outputs.version }}';
-          version.changelog = 'Initial WatchMatch release for Jellyfin 10.11.x.';
-          version.targetAbi = '10.11.0.0';
-          version.sourceUrl = 'https://github.com/${{ github.repository }}/releases/download/${{ steps.meta.outputs.tag }}/${{ steps.meta.outputs.asset }}';
-          version.checksum = '${{ steps.checksum.outputs.value }}';
-          version.timestamp = new Date().toISOString().replace(/\.\d{3}Z$/, 'Z');
+          const targetVersion = '${{ steps.meta.outputs.version }}';
+          
+          let versionEntry = manifest[0].versions.find(v => v.version === targetVersion);
+          if (!versionEntry) {
+            // Create a new entry by copying the targetAbi from the first one
+            versionEntry = {
+              version: targetVersion,
+              changelog: 'Automated release',
+              targetAbi: manifest[0].versions[0].targetAbi,
+              sourceUrl: '',
+              checksum: '',
+              timestamp: ''
+            };
+            manifest[0].versions.unshift(versionEntry);
+          }
+          
+          versionEntry.sourceUrl = 'https://github.com/${{ github.repository }}/releases/download/${{ steps.meta.outputs.tag }}/${{ steps.meta.outputs.asset }}';
+          versionEntry.checksum = '${{ steps.checksum.outputs.value }}';
+          versionEntry.timestamp = new Date().toISOString().replace(/\.\d{3}Z$/, 'Z');
+          
           fs.writeFileSync(manifestPath, JSON.stringify(manifest, null, 2) + '\n');
           NODE
 
@@ -117,4 +136,4 @@ jobs:
           git push origin "${{ steps.meta.outputs.tag }}" --force
           gh release create "${{ steps.meta.outputs.tag }}" "artifacts/release/${{ steps.meta.outputs.asset }}" \
             --title "WatchMatch ${{ steps.meta.outputs.version }}" \
-            --notes "Initial WatchMatch release for Jellyfin 10.11.x."
+            --notes "Automated plugin release. Check the plugin repository manifest for changelog details."
