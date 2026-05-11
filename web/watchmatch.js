@@ -59,26 +59,32 @@
                 return state.cachedGroupId ?? null;
             }
         },
-        async playMovie(movieId) {
-            const apiClient = this.getApiClient();
-            // Find our own session ID
-            const sessions = await this.ajax(
-                'Sessions?ControllableByUserId=' + this.getCurrentUserId(), 'GET'
-            );
-            const me = sessions?.find(s => s.DeviceId === this.deviceId());
-            if (!me) throw new Error('Own session not found');
-            // Send a PlayNow command to our own session — triggers the exact same
-            // code path as clicking Play on a movie detail page.  SyncPlay intercepts
-            // the resulting playback and syncs the entire group automatically.
-            await apiClient.ajax({
-                url: apiClient.getUrl(`Sessions/${me.Id}/Playing`),
-                type: 'POST',
-                contentType: 'application/json',
-                data: JSON.stringify({
-                    ItemIds: [movieId],
-                    PlayCommand: 'PlayNow',
-                    StartPositionTicks: 0
-                })
+        playMovie(movieId) {
+            // Navigate to the movie detail page and auto-click the Play button.
+            // This is literally the same action as a user clicking Play, so
+            // SyncPlay intercepts and syncs the group automatically.
+            window.location.hash = `#/details?id=${movieId}`;
+            return new Promise((resolve, reject) => {
+                const timeout = setTimeout(() => {
+                    observer.disconnect();
+                    reject(new Error('Play button did not appear'));
+                }, 6000);
+
+                function tryClick() {
+                    const btn = document.querySelector('.btnPlay, [data-action="play"], .detailButton-content');
+                    if (btn) {
+                        clearTimeout(timeout);
+                        observer.disconnect();
+                        // Small delay so the page finishes rendering
+                        setTimeout(() => { btn.click(); resolve(); }, 300);
+                        return true;
+                    }
+                    return false;
+                }
+
+                if (tryClick()) return;
+                const observer = new MutationObserver(() => tryClick());
+                observer.observe(document.body, { childList: true, subtree: true });
             });
         },
         url(path) {
@@ -273,22 +279,23 @@
             const result = await adapter.ajax(`WatchMatch/Session/${state.currentGroupId}/play`, 'POST');
             if (!result.startPlayback || !result.movieId) return;
 
-            // Start playback via Jellyfin's session play command.
-            // This triggers the same flow as clicking Play on a movie page.
-            // SyncPlay intercepts and syncs the group automatically.
+            const groupId = state.currentGroupId;
+            // Close modal first so the detail page renders cleanly
+            closeWatchMatch();
+
+            // Navigate to detail page and auto-click Play — same as user clicking Play
             try {
                 await adapter.playMovie(result.movieId);
             } catch (playErr) {
-                console.warn('WatchMatch: playMovie failed, navigating to movie instead:', playErr);
-                window.location.hash = `#/details?id=${result.movieId}`;
+                console.warn('WatchMatch: auto-play failed, user is on detail page:', playErr);
             }
 
+            // Best-effort session completion
             try {
-                await adapter.ajax(`WatchMatch/Session/${state.currentGroupId}/play-complete`, 'POST');
+                await adapter.ajax(`WatchMatch/Session/${groupId}/play-complete`, 'POST');
             } catch {
-                // Best-effort completion
+                // ignore
             }
-            closeWatchMatch();
         } catch (err) {
             console.error('WatchMatch play error:', err);
         } finally {
