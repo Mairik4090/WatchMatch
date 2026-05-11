@@ -166,6 +166,13 @@
     background: #36424b;
 }
 
+.watchmatch-action:disabled,
+.watchmatch-action.is-loading {
+    opacity: .5;
+    cursor: wait;
+    pointer-events: none;
+}
+
 .watchmatch-status {
     max-width: 520px;
     color: var(--watchmatch-muted);

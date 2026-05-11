@@ -7,8 +7,15 @@
         reconnectTimer: null,
         retryDelay: 1200,
         lastEventId: null,
-        preferences: { hideSeenHint: false }
+        preferences: { hideSeenHint: false },
+        refreshInFlight: false,
+        actionInFlight: false,
+        cachedGroupId: undefined,
+        cacheExpiry: 0
     };
+
+    const GROUP_CACHE_MS = 8000;
+    const POLL_INTERVAL_MS = 15000;
 
     const adapter = {
         getApiClient() {
@@ -19,28 +26,59 @@
         getCurrentUserId() {
             return this.getApiClient().getCurrentUserId();
         },
-        async getCurrentGroupId() {
-            try {
-                // Alle Gruppen holen
-                const groups = await this.ajax('SyncPlay/List', 'GET');
-                if (!groups?.length) return null;
-                // Aktuellen Username aus Session holen
-                const sessions = await this.ajax(
-                    'Sessions?ControllableByUserId=' + this.getCurrentUserId(), 'GET'
-                );
-                const me = sessions?.find(s => s.DeviceId === this.getApiClient().deviceId());
-                if (!me) return null;
-                // Gruppe finden wo Username in Participants ist
-                const myGroup = groups.find(g => g.Participants?.includes(me.UserName));
-                return myGroup?.GroupId || null;
-            } catch { return null; }
+        deviceId() {
+            return this.getApiClient().deviceId();
         },
-        async setSyncPlayQueue(movieId) {
+        async getCurrentGroupId(forceRefresh) {
+            // Return cached result if still valid
+            if (!forceRefresh && state.cachedGroupId !== undefined && Date.now() < state.cacheExpiry) {
+                return state.cachedGroupId;
+            }
+            try {
+                const [groups, sessions] = await Promise.all([
+                    this.ajax('SyncPlay/List', 'GET'),
+                    this.ajax('Sessions?ControllableByUserId=' + this.getCurrentUserId(), 'GET')
+                ]);
+                if (!groups?.length) {
+                    state.cachedGroupId = null;
+                    state.cacheExpiry = Date.now() + GROUP_CACHE_MS;
+                    return null;
+                }
+                const me = sessions?.find(s => s.DeviceId === this.deviceId());
+                if (!me) {
+                    state.cachedGroupId = null;
+                    state.cacheExpiry = Date.now() + GROUP_CACHE_MS;
+                    return null;
+                }
+                const myGroup = groups.find(g => g.Participants?.includes(me.UserName));
+                const result = myGroup?.GroupId || null;
+                state.cachedGroupId = result;
+                state.cacheExpiry = Date.now() + GROUP_CACHE_MS;
+                return result;
+            } catch {
+                return state.cachedGroupId ?? null;
+            }
+        },
+        async playMovie(movieId) {
             const apiClient = this.getApiClient();
-            return apiClient.requestSyncPlaySetNewQueue({
-                PlayingQueue: [movieId],
-                PlayingItemPosition: 0,
-                StartPositionTicks: 0
+            // Find our own session ID
+            const sessions = await this.ajax(
+                'Sessions?ControllableByUserId=' + this.getCurrentUserId(), 'GET'
+            );
+            const me = sessions?.find(s => s.DeviceId === this.deviceId());
+            if (!me) throw new Error('Own session not found');
+            // Send a PlayNow command to our own session — triggers the exact same
+            // code path as clicking Play on a movie detail page.  SyncPlay intercepts
+            // the resulting playback and syncs the entire group automatically.
+            await apiClient.ajax({
+                url: apiClient.getUrl(`Sessions/${me.Id}/Playing`),
+                type: 'POST',
+                contentType: 'application/json',
+                data: JSON.stringify({
+                    ItemIds: [movieId],
+                    PlayCommand: 'PlayNow',
+                    StartPositionTicks: 0
+                })
             });
         },
         url(path) {
@@ -106,39 +144,75 @@
     }
 
     async function refreshButton() {
-        ensureUi();
-        const button = document.querySelector('.watchmatch-launch');
-        const groupId = await adapter.getCurrentGroupId();
-        state.currentGroupId = groupId;
-        if (!groupId) {
-            button.classList.remove('is-visible');
-            return;
-        }
-
-        button.classList.add('is-visible');
+        // Prevent overlapping refresh calls
+        if (state.refreshInFlight) return;
+        state.refreshInFlight = true;
         try {
-            const session = await adapter.ajax(`WatchMatch/Session/${groupId}`, 'GET');
-            if (session.uiState === 'session_already_running_locked') {
-                button.textContent = 'WatchMatch laeuft';
-                button.disabled = true;
-            } else {
+            ensureUi();
+            const button = document.querySelector('.watchmatch-launch');
+            const groupId = await adapter.getCurrentGroupId(false);
+            state.currentGroupId = groupId;
+            if (!groupId) {
+                button.classList.remove('is-visible');
+                return;
+            }
+
+            button.classList.add('is-visible');
+            try {
+                const session = await adapter.ajax(`WatchMatch/Session/${groupId}`, 'GET');
+                if (session.uiState === 'session_already_running_locked') {
+                    button.textContent = 'WatchMatch laeuft';
+                    button.disabled = true;
+                } else {
+                    button.textContent = 'WatchMatch starten';
+                    button.disabled = false;
+                }
+            } catch {
                 button.textContent = 'WatchMatch starten';
                 button.disabled = false;
             }
         } catch {
-            button.textContent = 'WatchMatch starten';
-            button.disabled = false;
+            // Silently ignore refresh errors
+        } finally {
+            state.refreshInFlight = false;
         }
     }
 
+    // Debounced version for events that fire rapidly (hashchange, focus)
+    let refreshDebounceTimer = null;
+    function debouncedRefresh() {
+        if (refreshDebounceTimer) clearTimeout(refreshDebounceTimer);
+        refreshDebounceTimer = setTimeout(refreshButton, 600);
+    }
+
+    function setActionButtons(disabled) {
+        document.querySelectorAll('.watchmatch-action').forEach(btn => {
+            btn.disabled = disabled;
+            if (disabled) btn.classList.add('is-loading');
+            else btn.classList.remove('is-loading');
+        });
+    }
+
     async function openWatchMatch() {
-        state.currentGroupId = await adapter.getCurrentGroupId();
-        if (!state.currentGroupId) return;
-        ensureUi();
-        document.querySelector('.watchmatch-modal').classList.add('is-open');
-        await loadPreferences();
-        await renderState(await adapter.ajax(`WatchMatch/Session/${state.currentGroupId}/ready`, 'POST'));
-        connectStream();
+        if (state.actionInFlight) return;
+        state.actionInFlight = true;
+        try {
+            // Force-refresh the group ID when opening
+            state.currentGroupId = await adapter.getCurrentGroupId(true);
+            if (!state.currentGroupId) return;
+            ensureUi();
+            document.querySelector('.watchmatch-modal').classList.add('is-open');
+            const body = document.querySelector('.watchmatch-body');
+            body.innerHTML = '<div class="watchmatch-status">Lade...</div>';
+            await loadPreferences();
+            await renderState(await adapter.ajax(`WatchMatch/Session/${state.currentGroupId}/ready`, 'POST'));
+            connectStream();
+        } catch (err) {
+            const body = document.querySelector('.watchmatch-body');
+            if (body) body.innerHTML = `<div class="watchmatch-status">Fehler: ${escapeHtml(err.message || 'Unbekannter Fehler')}</div>`;
+        } finally {
+            state.actionInFlight = false;
+        }
     }
 
     function closeWatchMatch() {
@@ -161,24 +235,65 @@
     }
 
     async function vote(movieId, voteValue) {
-        const result = await adapter.ajax(`WatchMatch/Session/${state.currentGroupId}/vote`, 'POST', {
-            movieId,
-            vote: voteValue
-        });
-        await renderState(result);
+        if (state.actionInFlight) return;
+        state.actionInFlight = true;
+        setActionButtons(true);
+        try {
+            const result = await adapter.ajax(`WatchMatch/Session/${state.currentGroupId}/vote`, 'POST', {
+                movieId,
+                vote: voteValue
+            });
+            await renderState(result);
+        } catch (err) {
+            console.error('WatchMatch vote error:', err);
+        } finally {
+            state.actionInFlight = false;
+        }
     }
 
     async function continueMatch() {
-        const result = await adapter.ajax(`WatchMatch/Session/${state.currentGroupId}/continue`, 'POST');
-        await renderState(result);
+        if (state.actionInFlight) return;
+        state.actionInFlight = true;
+        setActionButtons(true);
+        try {
+            const result = await adapter.ajax(`WatchMatch/Session/${state.currentGroupId}/continue`, 'POST');
+            await renderState(result);
+        } catch (err) {
+            console.error('WatchMatch continue error:', err);
+        } finally {
+            state.actionInFlight = false;
+        }
     }
 
     async function playMatch() {
-        const result = await adapter.ajax(`WatchMatch/Session/${state.currentGroupId}/play`, 'POST');
-        if (!result.startPlayback || !result.movieId) return;
-        await adapter.setSyncPlayQueue(result.movieId);
-        await adapter.ajax(`WatchMatch/Session/${state.currentGroupId}/play-complete`, 'POST');
-        closeWatchMatch();
+        if (state.actionInFlight) return;
+        state.actionInFlight = true;
+        setActionButtons(true);
+        try {
+            const result = await adapter.ajax(`WatchMatch/Session/${state.currentGroupId}/play`, 'POST');
+            if (!result.startPlayback || !result.movieId) return;
+
+            // Start playback via Jellyfin's session play command.
+            // This triggers the same flow as clicking Play on a movie page.
+            // SyncPlay intercepts and syncs the group automatically.
+            try {
+                await adapter.playMovie(result.movieId);
+            } catch (playErr) {
+                console.warn('WatchMatch: playMovie failed, navigating to movie instead:', playErr);
+                window.location.hash = `#/details?id=${result.movieId}`;
+            }
+
+            try {
+                await adapter.ajax(`WatchMatch/Session/${state.currentGroupId}/play-complete`, 'POST');
+            } catch {
+                // Best-effort completion
+            }
+            closeWatchMatch();
+        } catch (err) {
+            console.error('WatchMatch play error:', err);
+        } finally {
+            state.actionInFlight = false;
+        }
     }
 
     async function renderState(model) {
@@ -315,8 +430,12 @@
             if (line.startsWith('data:')) data.push(line.slice(5).trimStart());
         }
         if (!data.length) return;
-        const evt = JSON.parse(data.join('\n'));
-        renderState(evt.state);
+        try {
+            const evt = JSON.parse(data.join('\n'));
+            renderState(evt.state);
+        } catch (err) {
+            console.error('WatchMatch: failed to parse SSE event:', err);
+        }
     }
 
     async function reloadAfterReconnect() {
@@ -350,9 +469,13 @@
         }[char]));
     }
 
-    window.addEventListener('hashchange', refreshButton);
-    window.addEventListener('focus', refreshButton);
-    window.setInterval(refreshButton, 5000);
+    // Use debounced refresh for rapid-fire events
+    window.addEventListener('hashchange', debouncedRefresh);
+    window.addEventListener('focus', debouncedRefresh);
+    // Reduced polling: 15s instead of 5s, skip when tab is hidden
+    window.setInterval(function () {
+        if (!document.hidden) refreshButton();
+    }, POLL_INTERVAL_MS);
     if (document.readyState === 'loading') {
         document.addEventListener('DOMContentLoaded', refreshButton);
     } else {
