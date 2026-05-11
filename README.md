@@ -20,7 +20,7 @@ This repository contains two pieces:
 Add this repository URL in Jellyfin Admin Dashboard -> Plugins -> Repositories:
 
 ```text
-https://raw.githubusercontent.com/Mairik4090/WatchMatch/main/manifest.json
+https://raw.githubusercontent.com/Mairik4090/WatchMatch/refs/heads/main/manifest.json
 ```
 
 Then open the plugin catalog and install WatchMatch like any other Jellyfin plugin.
