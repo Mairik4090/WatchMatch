@@ -7,7 +7,6 @@ on:
     paths:
       - 'server/**'
       - 'web/**'
-      - 'manifest.json'
       - 'build.yaml'
   workflow_dispatch:
     inputs:

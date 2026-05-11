@@ -1,6 +1,6 @@
 name: WatchMatch
 guid: 2ec90ca2-b8ab-40e8-9ddf-7502c27e9a44
-version: 0.1.0.4
+version: 0.1.0.5
 targetAbi: 10.11.0.0
 framework: net9.0
 owner: local
