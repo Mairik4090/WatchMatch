@@ -94,14 +94,6 @@
             document.head.appendChild(link);
         }
 
-        if (!document.querySelector('.watchmatch-launch')) {
-            const button = document.createElement('button');
-            button.className = 'watchmatch-launch';
-            button.type = 'button';
-            button.textContent = 'WatchMatch starten';
-            button.addEventListener('click', openWatchMatch);
-            document.body.appendChild(button);
-        }
 
         if (!document.querySelector('.watchmatch-modal')) {
             const modal = document.createElement('div');
@@ -122,46 +114,56 @@
         }
     }
 
-    async function refreshButton() {
-        // Prevent overlapping refresh calls
-        if (state.refreshInFlight) return;
-        state.refreshInFlight = true;
+    async function injectWatchMatchMenu(menu) {
+        // Ensure we have the latest group state
+        const groupId = await adapter.getCurrentGroupId(true);
+        state.currentGroupId = groupId;
+        if (!groupId) return;
+
+        const scroller = menu.querySelector('.actionSheetScroller');
+        if (!scroller) return;
+
+        // Prevent duplicate injection
+        if (scroller.querySelector('.watchmatch-launch-menu')) return;
+
+        const btn = document.createElement('button');
+        btn.type = 'button';
+        btn.className = 'listItem listItem-button actionSheetMenuItem listItem-border emby-button watchmatch-launch-menu';
+        
+        let isRunning = false;
         try {
-            ensureUi();
-            const button = document.querySelector('.watchmatch-launch');
-            const groupId = await adapter.getCurrentGroupId(false);
-            state.currentGroupId = groupId;
-            if (!groupId) {
-                button.classList.remove('is-visible');
-                return;
+            const session = await adapter.ajax(`WatchMatch/Session/${groupId}`, 'GET');
+            if (session.uiState === 'session_already_running_locked') {
+                isRunning = true;
+            }
+        } catch {}
+
+        btn.innerHTML = `
+            <span class="actionsheetMenuItemIcon md-icon material-icons">local_play</span>
+            <div class="listItemBody">
+                <div class="listItemBodyText actionSheetItemText" style="color: #00a4dc; font-weight: bold;">WatchMatch</div>
+                <div class="listItemBodyText secondary">${isRunning ? 'Läuft bereits...' : 'Starten'}</div>
+            </div>
+        `;
+
+        btn.addEventListener('click', (e) => {
+            e.preventDefault();
+            e.stopPropagation();
+            
+            // Close the Jellyfin SyncPlay dialog
+            const closeBtn = menu.closest('.dialogContainer')?.querySelector('.btnCancel') || 
+                             menu.closest('.dialogContainer')?.querySelector('button[data-action="close"]');
+            if (closeBtn) closeBtn.click();
+            else {
+                document.querySelector('.dialogBackdrop')?.remove();
+                menu.closest('.dialogContainer')?.remove();
             }
 
-            button.classList.add('is-visible');
-            try {
-                const session = await adapter.ajax(`WatchMatch/Session/${groupId}`, 'GET');
-                if (session.uiState === 'session_already_running_locked') {
-                    button.textContent = 'WatchMatch laeuft';
-                    button.disabled = true;
-                } else {
-                    button.textContent = 'WatchMatch starten';
-                    button.disabled = false;
-                }
-            } catch {
-                button.textContent = 'WatchMatch starten';
-                button.disabled = false;
-            }
-        } catch {
-            // Silently ignore refresh errors
-        } finally {
-            state.refreshInFlight = false;
-        }
-    }
+            if (!isRunning) openWatchMatch();
+        });
 
-    // Debounced version for events that fire rapidly (hashchange, focus)
-    let refreshDebounceTimer = null;
-    function debouncedRefresh() {
-        if (refreshDebounceTimer) clearTimeout(refreshDebounceTimer);
-        refreshDebounceTimer = setTimeout(refreshButton, 600);
+        // Insert near the top
+        scroller.insertBefore(btn, scroller.firstChild);
     }
 
     function setActionButtons(disabled) {
@@ -479,16 +481,24 @@
         }[char]));
     }
 
-    // Use debounced refresh for rapid-fire events
-    window.addEventListener('hashchange', debouncedRefresh);
-    window.addEventListener('focus', debouncedRefresh);
-    // Reduced polling: 15s instead of 5s, skip when tab is hidden
-    window.setInterval(function () {
-        if (!document.hidden) refreshButton();
-    }, POLL_INTERVAL_MS);
+    // Watch for Jellyfin dialogs opening (specifically SyncPlay menu)
+    const dialogObserver = new MutationObserver((mutations) => {
+        for (const mutation of mutations) {
+            for (const node of mutation.addedNodes) {
+                if (node.nodeType === 1 && node.classList.contains('dialogContainer')) {
+                    const menu = node.querySelector('.syncPlayGroupMenu') || (node.classList.contains('syncPlayGroupMenu') ? node : null);
+                    if (menu) injectWatchMatchMenu(menu);
+                }
+            }
+        }
+    });
+    
+    // Also inject CSS immediately
+    ensureUi();
+
     if (document.readyState === 'loading') {
-        document.addEventListener('DOMContentLoaded', refreshButton);
+        document.addEventListener('DOMContentLoaded', () => dialogObserver.observe(document.body, { childList: true }));
     } else {
-        refreshButton();
+        dialogObserver.observe(document.body, { childList: true });
     }
 }());

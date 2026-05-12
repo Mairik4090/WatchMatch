@@ -9,33 +9,6 @@
     --watchmatch-accent: #e0b45a;
 }
 
-.watchmatch-launch {
-    position: fixed;
-    right: 24px;
-    bottom: 84px;
-    z-index: 1299;
-    display: none;
-    align-items: center;
-    gap: 10px;
-    height: 44px;
-    padding: 0 16px;
-    border: 1px solid var(--watchmatch-line);
-    border-radius: 8px;
-    color: var(--watchmatch-text);
-    background: #253039;
-    box-shadow: 0 10px 32px rgba(0, 0, 0, .34);
-    font: inherit;
-    cursor: pointer;
-}
-
-.watchmatch-launch.is-visible {
-    display: inline-flex;
-}
-
-.watchmatch-launch:disabled {
-    opacity: .58;
-    cursor: default;
-}
 
 .watchmatch-modal {
     position: fixed;
@@ -211,11 +184,6 @@
 }
 
 @media (max-width: 640px) {
-    .watchmatch-launch {
-        right: 16px;
-        bottom: 72px;
-    }
-
     .watchmatch-shell {
         width: 100vw;
         min-height: 100vh;
