@@ -27,7 +27,7 @@ Then open the plugin catalog and install WatchMatch like any other Jellyfin plug
 
 ## What WatchMatch Does
 
-1. A WatchMatch button appears while the user is in a SyncPlay group.
+1. A WatchMatch button appears inside the SyncPlay group menu while the user is in a SyncPlay group.
 2. Participants press ready.
 3. When all currently active frozen participants are ready, WatchMatch builds a randomized queue of Jellyfin `Movie` items.
 4. Each participant swipes independently. Faster users can be far ahead of slower users.
@@ -69,7 +69,7 @@ Install the server plugin first, then inject the web assets. The descriptor in `
 
 File Transformation plugin versions may use slightly different descriptor schemas, so adapt the provided JSON to the installed plugin version.
 
-The web script intentionally keeps Jellyfin Web internals behind `window.watchmatchJellyfinAdapter`. If your Jellyfin Web build does not expose `SyncPlay.Manager` globally, expose the active SyncPlay manager as `window.__watchMatchSyncPlayManager` in the same File Transformation layer.
+The web script intentionally keeps Jellyfin Web internals behind `window.watchmatchJellyfinAdapter` so future Jellyfin Web changes are isolated to one small compatibility layer.
 
 ## Build
 
@@ -95,4 +95,4 @@ dotnet publish server/Jellyfin.Plugin.WatchMatch/Jellyfin.Plugin.WatchMatch.cspr
 
 ## Repository Status
 
-This is a v1 implementation scaffold with the main server/session/web logic and unit tests for the pure state machine. Build and integration testing must be run against a real Jellyfin `10.11.x` development server.
+This is a v1 implementation with server/session/web logic and unit tests for the pure state machine. Browser integration testing must be run against a real Jellyfin `10.11.x` development server.
