@@ -8,14 +8,16 @@
         retryDelay: 1200,
         lastEventId: null,
         preferences: { hideSeenHint: false },
-        refreshInFlight: false,
         actionInFlight: false,
         cachedGroupId: undefined,
         cacheExpiry: 0
     };
 
-    const GROUP_CACHE_MS = 8000;
-    const POLL_INTERVAL_MS = 15000;
+    const GROUP_CACHE_MS = 1000;
+    const API_READY_TIMEOUT_MS = 20000;
+    const API_READY_INTERVAL_MS = 250;
+    const injectedMenus = new WeakSet();
+    let globalClickHandlerRegistered = false;
 
     const adapter = {
         getApiClient() {
@@ -30,41 +32,42 @@
             return this.getApiClient().deviceId();
         },
         async getCurrentGroupId(forceRefresh) {
-            // Return cached result if still valid
             if (!forceRefresh && state.cachedGroupId !== undefined && Date.now() < state.cacheExpiry) {
                 return state.cachedGroupId;
             }
+
             try {
                 const [groups, sessions] = await Promise.all([
                     this.ajax('SyncPlay/List', 'GET'),
                     this.ajax('Sessions?ControllableByUserId=' + this.getCurrentUserId(), 'GET')
                 ]);
+
                 if (!groups?.length) {
-                    state.cachedGroupId = null;
-                    state.cacheExpiry = Date.now() + GROUP_CACHE_MS;
-                    return null;
+                    return rememberGroupId(null);
                 }
-                const me = sessions?.find(s => s.DeviceId === this.deviceId());
+
+                const me = sessions?.find(session => session.DeviceId === this.deviceId());
                 if (!me) {
-                    state.cachedGroupId = null;
-                    state.cacheExpiry = Date.now() + GROUP_CACHE_MS;
-                    return null;
+                    return rememberGroupId(null);
                 }
-                const myGroup = groups.find(g => g.Participants?.includes(me.UserName));
-                const result = myGroup?.GroupId || null;
-                state.cachedGroupId = result;
-                state.cacheExpiry = Date.now() + GROUP_CACHE_MS;
-                return result;
-            } catch {
+
+                const myGroup = groups.find(group => group.Participants?.includes(me.UserName));
+                return rememberGroupId(myGroup?.GroupId || null);
+            } catch (err) {
+                console.warn('WatchMatch: failed to resolve SyncPlay group.', err);
                 return state.cachedGroupId ?? null;
             }
         },
-        // No playMovie method needed — playback is handled by navigateAndAutoPlay
         url(path) {
             return this.getApiClient().getUrl(path);
         },
         token() {
             return this.getApiClient().accessToken();
+        },
+        authHeader() {
+            const apiClient = this.getApiClient();
+            const deviceId = apiClient.deviceId();
+            return `MediaBrowser Client="Jellyfin Web", Device="Jellyfin Web", DeviceId="${deviceId}", Version="10.11.0", Token="${this.token()}"`;
         },
         async ajax(path, method, body) {
             const apiClient = this.getApiClient();
@@ -75,15 +78,22 @@
                 dataType: 'json',
                 data: body ? JSON.stringify(body) : undefined
             });
-            // Jellyfin 10.9+ returns a fetch Response, older versions return the parsed JSON directly
+
             if (response && typeof response.json === 'function') {
-                return response.json();
+                return normalizeApiPayload(await response.json());
             }
-            return response;
+
+            return normalizeApiPayload(response);
         }
     };
 
     window.watchmatchJellyfinAdapter = adapter;
+
+    function rememberGroupId(groupId) {
+        state.cachedGroupId = groupId;
+        state.cacheExpiry = Date.now() + GROUP_CACHE_MS;
+        return groupId;
+    }
 
     function ensureUi() {
         if (!document.querySelector('#watchmatch-style')) {
@@ -93,7 +103,6 @@
             link.href = adapter.url('WatchMatch/Assets/watchmatch.css');
             document.head.appendChild(link);
         }
-
 
         if (!document.querySelector('.watchmatch-modal')) {
             const modal = document.createElement('div');
@@ -114,69 +123,84 @@
         }
     }
 
-    let isInjecting = false;
     async function injectWatchMatchMenu(menu) {
-        if (isInjecting) return;
-        isInjecting = true;
+        if (!menu || injectedMenus.has(menu)) return;
+        injectedMenus.add(menu);
+
         try {
-            // Wait for the scroller to be added by Jellyfin
             let scroller = null;
             for (let i = 0; i < 20; i++) {
-                scroller = menu.querySelector('.actionSheetScroller');
+                scroller = menu.querySelector('.actionSheetScroller') || menu.closest('.actionSheetScroller');
                 if (scroller) break;
-                await new Promise(r => setTimeout(r, 50));
+                await new Promise(resolve => setTimeout(resolve, 50));
             }
-            if (!scroller) return;
 
-            // Ensure we have the latest group state
-            const groupId = await adapter.getCurrentGroupId(true);
-            state.currentGroupId = groupId;
-            if (!groupId) return;
-
-            // Prevent duplicate injection
-            if (scroller.querySelector('.watchmatch-launch-menu')) return;
+            if (!scroller || scroller.querySelector('.watchmatch-launch-menu')) return;
 
             const btn = document.createElement('button');
             btn.type = 'button';
             btn.className = 'listItem listItem-button actionSheetMenuItem listItem-border emby-button watchmatch-launch-menu';
-        
-        let isRunning = false;
-        try {
-            const session = await adapter.ajax(`WatchMatch/Session/${groupId}`, 'GET');
-            if (session.uiState === 'session_already_running_locked') {
-                isRunning = true;
-            }
-        } catch {}
+            btn.innerHTML = menuButtonHtml('Pruefe Gruppe...');
+            scroller.insertBefore(btn, scroller.firstChild);
 
-        btn.innerHTML = `
-            <span class="actionsheetMenuItemIcon md-icon material-icons">local_play</span>
-            <div class="listItemBody">
-                <div class="listItemBodyText actionSheetItemText" style="color: #00a4dc; font-weight: bold;">WatchMatch</div>
-                <div class="listItemBodyText secondary">${isRunning ? 'Läuft bereits...' : 'Starten'}</div>
-            </div>
-        `;
-
-        btn.addEventListener('click', (e) => {
-            e.preventDefault();
-            e.stopPropagation();
-            
-            // Close the Jellyfin SyncPlay dialog
-            const closeBtn = menu.closest('.dialogContainer, .actionSheet')?.querySelector('.btnCancel') || 
-                             menu.closest('.dialogContainer, .actionSheet')?.querySelector('button[data-action="close"]');
-            if (closeBtn) closeBtn.click();
-            else {
-                document.querySelector('.dialogBackdrop')?.remove();
-                menu.closest('.dialogContainer, .actionSheet')?.remove();
+            let groupId = null;
+            let isRunning = false;
+            try {
+                groupId = await adapter.getCurrentGroupId(true);
+                state.currentGroupId = groupId;
+                if (groupId) {
+                    const session = await adapter.ajax(`WatchMatch/Session/${groupId}`, 'GET');
+                    isRunning = session.uiState === 'session_already_running_locked';
+                }
+            } catch (err) {
+                console.warn('WatchMatch: could not resolve SyncPlay group state.', err);
             }
 
-            if (!isRunning) openWatchMatch();
-        });
+            if (!groupId) {
+                btn.disabled = true;
+                btn.innerHTML = menuButtonHtml('Erst Gruppe beitreten');
+                return;
+            }
 
-        // Insert near the top
-        scroller.insertBefore(btn, scroller.firstChild);
-        } finally {
-            isInjecting = false;
+            btn.innerHTML = menuButtonHtml(isRunning ? 'Laeuft bereits...' : 'Starten');
+            btn.addEventListener('click', event => {
+                event.preventDefault();
+                event.stopPropagation();
+                closeSyncPlayMenu(menu);
+                openWatchMatch();
+            });
+        } catch (err) {
+            injectedMenus.delete(menu);
+            console.warn('WatchMatch: failed to inject SyncPlay menu button.', err);
         }
+    }
+
+    function menuButtonHtml(secondaryText) {
+        return [
+            '<span class="actionsheetMenuItemIcon md-icon material-icons">local_play</span>',
+            '<div class="listItemBody">',
+            '<div class="listItemBodyText actionSheetItemText" style="color: #00a4dc; font-weight: bold;">WatchMatch</div>',
+            `<div class="listItemBodyText secondary">${escapeHtml(secondaryText)}</div>`,
+            '</div>'
+        ].join('');
+    }
+
+    function closeSyncPlayMenu(menu) {
+        const containers = [
+            menu.closest('.dialogContainer'),
+            menu.closest('.actionSheet')
+        ].filter(Boolean);
+        const container = containers[0];
+        const closeBtn = container?.querySelector('.btnCancel') ||
+            container?.querySelector('button[data-action="close"]');
+        if (closeBtn) {
+            closeBtn.click();
+        }
+
+        window.setTimeout(() => {
+            document.querySelectorAll('.dialogBackdrop').forEach(backdrop => backdrop.remove());
+            containers.forEach(dialog => dialog.remove());
+        }, 80);
     }
 
     function setActionButtons(disabled) {
@@ -191,13 +215,17 @@
         if (state.actionInFlight) return;
         state.actionInFlight = true;
         try {
-            // Force-refresh the group ID when opening
             state.currentGroupId = await adapter.getCurrentGroupId(true);
-            if (!state.currentGroupId) return;
             ensureUi();
             document.querySelector('.watchmatch-modal').classList.add('is-open');
             const body = document.querySelector('.watchmatch-body');
             body.innerHTML = '<div class="watchmatch-status">Lade...</div>';
+
+            if (!state.currentGroupId) {
+                body.innerHTML = '<div class="watchmatch-status">Tritt zuerst einer SyncPlay-Gruppe bei.</div>';
+                return;
+            }
+
             await loadPreferences();
             await renderState(await adapter.ajax(`WatchMatch/Session/${state.currentGroupId}/ready`, 'POST'));
             connectStream();
@@ -216,7 +244,7 @@
 
     async function loadPreferences() {
         try {
-            state.preferences = await adapter.ajax('WatchMatch/Preferences', 'GET');
+            state.preferences = normalizePreferences(await adapter.ajax('WatchMatch/Preferences', 'GET'));
             document.querySelector('.watchmatch-hide-seen').checked = !!state.preferences.hideSeenHint;
         } catch {
             state.preferences = { hideSeenHint: false };
@@ -265,11 +293,10 @@
         setActionButtons(true);
         try {
             const result = await adapter.ajax(`WatchMatch/Session/${state.currentGroupId}/play`, 'POST');
-            if (!result.startPlayback || !result.movieId) return;
-            // The server broadcasts PlayStarting to all clients via SSE.
-            // renderState will pick it up and call navigateAndAutoPlay for everyone.
-            // For the clicking client, renderState runs synchronously below:
-            await renderState(result);
+            const play = normalizePlayResponse(result);
+            if (play.startPlayback && play.movieId) {
+                navigateAndAutoPlay(play.movieId);
+            }
         } catch (err) {
             console.error('WatchMatch play error:', err);
         } finally {
@@ -278,11 +305,17 @@
     }
 
     async function renderState(model) {
+        model = normalizeState(model);
         const body = document.querySelector('.watchmatch-body');
         if (!body) return;
 
         if (model.uiState === 'session_already_running_locked') {
             body.innerHTML = '<div class="watchmatch-status">Diese WatchMatch-Runde laeuft bereits. Starte nach dem aktuellen Match eine neue Runde.</div>';
+            return;
+        }
+
+        if (model.uiState === 'not_enough_participants') {
+            body.innerHTML = '<div class="watchmatch-status">WatchMatch braucht mindestens zwei aktive SyncPlay-Teilnehmer.</div>';
             return;
         }
 
@@ -314,14 +347,7 @@
         }
 
         if (model.status === 'PlayStarting' || model.status === 'Completed') {
-            // Navigate ALL clients to the movie detail page and auto-click Play.
-            const movieId = model.matchMovie?.id;
-            if (movieId) {
-                closeWatchMatch();
-                navigateAndAutoPlay(movieId);
-            } else {
-                body.innerHTML = '<div class="watchmatch-status">Playback wird gestartet...</div>';
-            }
+            body.innerHTML = '<div class="watchmatch-status">Playback wird gestartet...</div>';
             return;
         }
 
@@ -355,7 +381,7 @@
             `<div class="watchmatch-poster" style="background-image:url('${poster}')"></div>`,
             '<div class="watchmatch-card-body">',
             `<h2 class="watchmatch-movie-title">${escapeHtml(movie.name)}</h2>`,
-            `<div class="watchmatch-meta">${escapeHtml([year, runtime, genres].filter(Boolean).join(' · '))}</div>`,
+            `<div class="watchmatch-meta">${escapeHtml([year, runtime, genres].filter(Boolean).join(' / '))}</div>`,
             seen,
             '</div>',
             '</article>',
@@ -376,18 +402,24 @@
         try {
             const headers = {
                 Accept: 'text/event-stream',
+                Authorization: adapter.authHeader(),
+                'X-Emby-Authorization': adapter.authHeader(),
                 'X-Emby-Token': adapter.token()
             };
             if (state.lastEventId) headers['Last-Event-ID'] = String(state.lastEventId);
+
             const response = await fetch(adapter.url(`WatchMatch/Session/${state.currentGroupId}/events`), {
                 headers,
                 signal
             });
+
             if (!response.ok) throw new Error(`WatchMatch stream failed: ${response.status}`);
             await readSse(response.body, signal);
             state.retryDelay = 1200;
-        } catch {
+            if (!signal.aborted) throw new Error('WatchMatch stream ended.');
+        } catch (err) {
             if (!signal.aborted) {
+                console.warn('WatchMatch stream disconnected; reloading state and reconnecting.', err);
                 await reloadAfterReconnect();
                 state.reconnectTimer = window.setTimeout(connectStream, state.retryDelay);
                 state.retryDelay = Math.min(state.retryDelay * 1.7, 10000);
@@ -410,17 +442,20 @@
     }
 
     function handleSseBlock(block) {
+        block = block.replace(/\r\n/g, '\n').replace(/\r/g, '\n');
         if (!block || block.startsWith(':')) return;
+
         const lines = block.split('\n');
         const data = [];
         for (const line of lines) {
             if (line.startsWith('id:')) state.lastEventId = line.slice(3).trim();
             if (line.startsWith('data:')) data.push(line.slice(5).trimStart());
         }
+
         if (!data.length) return;
         try {
             const evt = JSON.parse(data.join('\n'));
-            renderState(evt.state);
+            renderState(evt.state || evt.State);
         } catch (err) {
             console.error('WatchMatch: failed to parse SSE event:', err);
         }
@@ -448,10 +483,9 @@
     }
 
     function navigateAndAutoPlay(movieId) {
-        // Navigate to the movie detail page
+        closeWatchMatch();
         window.location.hash = `#/details?id=${movieId}`;
 
-        // Show a countdown overlay
         let banner = document.querySelector('.watchmatch-autoplay-banner');
         if (!banner) {
             banner = document.createElement('div');
@@ -471,7 +505,6 @@
             }
             clearInterval(countdown);
 
-            // Try to find and click the Play button
             const btn = document.querySelector('.btnPlay, [data-action="resume"], [data-action="play"]');
             if (btn) {
                 banner.textContent = 'WatchMatch: Starte Wiedergabe...';
@@ -485,7 +518,7 @@
     }
 
     function escapeHtml(value) {
-        return String(value || '').replace(/[&<>"']/g, (char) => ({
+        return String(value || '').replace(/[&<>"']/g, char => ({
             '&': '&amp;',
             '<': '&lt;',
             '>': '&gt;',
@@ -494,31 +527,134 @@
         }[char]));
     }
 
-    // Watch for Jellyfin dialogs opening (specifically SyncPlay menu)
-    const dialogObserver = new MutationObserver((mutations) => {
+    function normalizeApiPayload(payload) {
+        if (!payload || typeof payload !== 'object') return payload;
+        if ('UiState' in payload || 'uiState' in payload) return normalizeState(payload);
+        if ('HideSeenHint' in payload || 'hideSeenHint' in payload) return normalizePreferences(payload);
+        if ('StartPlayback' in payload || 'startPlayback' in payload) return normalizePlayResponse(payload);
+        return payload;
+    }
+
+    function normalizePreferences(payload) {
+        return {
+            hideSeenHint: !!readProp(payload, 'hideSeenHint', 'HideSeenHint')
+        };
+    }
+
+    function normalizePlayResponse(payload) {
+        return {
+            startPlayback: !!readProp(payload, 'startPlayback', 'StartPlayback'),
+            movieId: readProp(payload, 'movieId', 'MovieId') || null
+        };
+    }
+
+    function normalizeState(payload) {
+        if (!payload || typeof payload !== 'object') {
+            return {};
+        }
+
+        return {
+            uiState: readProp(payload, 'uiState', 'UiState'),
+            groupId: readProp(payload, 'groupId', 'GroupId'),
+            status: readProp(payload, 'status', 'Status'),
+            participantUserIds: readProp(payload, 'participantUserIds', 'ParticipantUserIds') || [],
+            activeUserIds: readProp(payload, 'activeUserIds', 'ActiveUserIds') || [],
+            readyUserIds: readProp(payload, 'readyUserIds', 'ReadyUserIds') || [],
+            memberCount: readProp(payload, 'memberCount', 'MemberCount') || 0,
+            currentMovie: normalizeMovie(readProp(payload, 'currentMovie', 'CurrentMovie')),
+            matchMovie: normalizeMovie(readProp(payload, 'matchMovie', 'MatchMovie')),
+            isUserReady: !!readProp(payload, 'isUserReady', 'IsUserReady'),
+            isUserExhausted: !!readProp(payload, 'isUserExhausted', 'IsUserExhausted'),
+            reason: readProp(payload, 'reason', 'Reason')
+        };
+    }
+
+    function normalizeMovie(movie) {
+        if (!movie || typeof movie !== 'object') return null;
+        return {
+            id: readProp(movie, 'id', 'Id'),
+            name: readProp(movie, 'name', 'Name'),
+            productionYear: readProp(movie, 'productionYear', 'ProductionYear'),
+            genres: readProp(movie, 'genres', 'Genres') || [],
+            runTimeTicks: readProp(movie, 'runTimeTicks', 'RunTimeTicks'),
+            hasPrimaryImage: !!readProp(movie, 'hasPrimaryImage', 'HasPrimaryImage'),
+            played: !!readProp(movie, 'played', 'Played')
+        };
+    }
+
+    function readProp(source, camelName, pascalName) {
+        if (!source || typeof source !== 'object') return undefined;
+        return source[camelName] !== undefined ? source[camelName] : source[pascalName];
+    }
+
+    function scanForSyncPlayMenus() {
+        document.querySelectorAll('.syncPlayGroupMenu').forEach(menu => {
+            injectWatchMatchMenu(menu);
+        });
+    }
+
+    async function waitForApiClient() {
+        const started = Date.now();
+        while (Date.now() - started < API_READY_TIMEOUT_MS) {
+            try {
+                adapter.getApiClient();
+                return true;
+            } catch {
+                await new Promise(resolve => setTimeout(resolve, API_READY_INTERVAL_MS));
+            }
+        }
+
+        return false;
+    }
+
+    async function startWatchMatchIntegration() {
+        if (!await waitForApiClient()) {
+            console.warn('WatchMatch: Jellyfin ApiClient was not ready; web integration disabled.');
+            return;
+        }
+
+        const observerTarget = document.body || document.documentElement;
+        if (!observerTarget) return;
+
+        registerGlobalClickHandler();
+        dialogObserver.observe(observerTarget, { childList: true, subtree: true });
+        scanForSyncPlayMenus();
+    }
+
+    function registerGlobalClickHandler() {
+        if (globalClickHandlerRegistered) return;
+        globalClickHandlerRegistered = true;
+        document.addEventListener('click', event => {
+            if (event.target?.closest?.('.watchmatch-close')) {
+                event.preventDefault();
+                event.stopPropagation();
+                closeWatchMatch();
+            }
+        }, true);
+    }
+
+    const dialogObserver = new MutationObserver(mutations => {
         for (const mutation of mutations) {
             for (const node of mutation.addedNodes) {
-                if (node.nodeType === 1) {
-                    if (node.classList.contains('syncPlayGroupMenu')) {
-                        injectWatchMatchMenu(node);
-                    } else if (node.classList.contains('actionSheetScroller')) {
-                        const menu = node.closest('.syncPlayGroupMenu');
-                        if (menu) injectWatchMatchMenu(menu);
-                    } else if (node.querySelector) {
-                        const menu = node.querySelector('.syncPlayGroupMenu');
-                        if (menu) injectWatchMatchMenu(menu);
-                    }
+                if (node.nodeType !== 1) continue;
+                if (node.classList.contains('syncPlayGroupMenu')) {
+                    injectWatchMatchMenu(node);
+                } else if (node.classList.contains('actionSheetScroller')) {
+                    const menu = node.closest('.syncPlayGroupMenu');
+                    if (menu) injectWatchMatchMenu(menu);
+                } else if (node.querySelector) {
+                    const menu = node.querySelector('.syncPlayGroupMenu');
+                    if (menu) injectWatchMatchMenu(menu);
                 }
             }
         }
+
+        scanForSyncPlayMenus();
     });
-    
-    // Also inject CSS immediately
-    ensureUi();
 
     if (document.readyState === 'loading') {
-        document.addEventListener('DOMContentLoaded', () => dialogObserver.observe(document.body, { childList: true, subtree: true }));
+        document.addEventListener('DOMContentLoaded', startWatchMatchIntegration);
     } else {
-        dialogObserver.observe(document.body, { childList: true, subtree: true });
+        startWatchMatchIntegration();
     }
 }());

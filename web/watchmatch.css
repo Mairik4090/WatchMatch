@@ -13,8 +13,9 @@
 .watchmatch-modal {
     position: fixed;
     inset: 0;
-    z-index: 1300;
+    z-index: 99990;
     display: none;
+    pointer-events: none;
     color: var(--watchmatch-text);
     background: rgba(8, 11, 14, .74);
 }
@@ -22,6 +23,7 @@
 .watchmatch-modal.is-open {
     display: grid;
     place-items: center;
+    pointer-events: auto;
 }
 
 .watchmatch-shell {
@@ -29,6 +31,7 @@
     min-height: min(720px, calc(100vh - 32px));
     display: grid;
     grid-template-rows: auto 1fr;
+    pointer-events: auto;
     background: var(--watchmatch-bg);
     border: 1px solid var(--watchmatch-line);
     border-radius: 8px;
@@ -60,6 +63,7 @@
     color: var(--watchmatch-text);
     background: transparent;
     cursor: pointer;
+    pointer-events: auto;
 }
 
 .watchmatch-body {
@@ -123,6 +127,7 @@
     font: inherit;
     font-weight: 650;
     cursor: pointer;
+    pointer-events: auto;
 }
 
 .watchmatch-action.reject {

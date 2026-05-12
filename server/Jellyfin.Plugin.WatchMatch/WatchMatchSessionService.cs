@@ -72,7 +72,14 @@ public sealed class WatchMatchSessionService
             throw new UnauthorizedAccessException("WatchMatch requires an authenticated Jellyfin user.");
         }
 
-        var session = System.Linq.Enumerable.FirstOrDefault(_sessionManager.Sessions, s => s.DeviceId == auth.DeviceId);
+        var userSessions = _sessionManager.Sessions
+            .Where(s => s.UserId == auth.User.Id)
+            .ToArray();
+        var session = userSessions.FirstOrDefault(s => string.Equals(s.DeviceId, auth.DeviceId, StringComparison.Ordinal));
+        if (session is null && userSessions.Length == 1)
+        {
+            session = userSessions[0];
+        }
 
         return session ?? throw new KeyNotFoundException("Session not found.");
     }
@@ -113,6 +120,10 @@ public sealed class WatchMatchSessionService
         await using var guard = await LockGroupAsync(groupId, cancellationToken).ConfigureAwait(false);
         var group = _syncPlayManager.GetGroup(currentSession, groupId)
             ?? throw new InvalidOperationException("Current session is not in the SyncPlay group.");
+        if (ResolveActiveParticipants(group).Count < 2)
+        {
+            return EmptyState("not_enough_participants", groupId, WatchMatchEndReasons.NotEnoughActiveParticipants);
+        }
 
         var session = _sessions.GetOrAdd(groupId, _ => CreateSession(group));
         if (!session.ParticipantUserIds.Contains(currentSession.UserId) || session.DepartedUserIds.Contains(currentSession.UserId))

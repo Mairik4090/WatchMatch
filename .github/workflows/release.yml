@@ -7,14 +7,14 @@ on:
     paths:
       - 'server/**'
       - 'web/**'
+      - 'tests/**'
+      - 'Directory.Build.props'
       - 'build.yaml'
+      - '.github/workflows/release.yml'
   workflow_dispatch:
     inputs:
       version:
-        description: Jellyfin plugin version
-        required: false
-      tag:
-        description: GitHub release tag
+        description: Jellyfin plugin version, for example 0.1.0.12. Leave empty to auto-increment the latest tag.
         required: false
 
 permissions:
@@ -23,6 +23,7 @@ permissions:
 
 jobs:
   release:
+    if: github.event_name == 'workflow_dispatch' || !startsWith(github.event.head_commit.message, 'chore: release WatchMatch')
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
@@ -31,20 +32,54 @@ jobs:
           ref: main
           fetch-depth: 0
 
-      - name: Resolve release metadata
+      - name: Resolve next patch version
         id: meta
         shell: bash
         run: |
-          if [[ "${{ github.event_name }}" == "workflow_dispatch" && -n "${{ github.event.inputs.version }}" ]]; then
-            VERSION="${{ github.event.inputs.version }}"
-            TAG="${{ github.event.inputs.tag }}"
+          set -euo pipefail
+
+          INPUT_VERSION="${{ github.event.inputs.version }}"
+          if [[ -n "${INPUT_VERSION}" ]]; then
+            VERSION="${INPUT_VERSION}"
           else
-            VERSION=$(grep -oP '(?<=<Version>).*?(?=</Version>)' server/Jellyfin.Plugin.WatchMatch/Jellyfin.Plugin.WatchMatch.csproj)
-            TAG="v$VERSION"
+            LATEST_TAG="$(git tag -l 'v[0-9]*.[0-9]*.[0-9]*.[0-9]*' --sort=-v:refname | head -n 1)"
+            if [[ -z "${LATEST_TAG}" ]]; then
+              VERSION="0.1.0.0"
+            else
+              BASE_VERSION="${LATEST_TAG#v}"
+              IFS='.' read -r MAJOR MINOR BUILD PATCH <<< "${BASE_VERSION}"
+              VERSION="${MAJOR}.${MINOR}.${BUILD}.$((PATCH + 1))"
+            fi
           fi
-          echo "tag=${TAG}" >> "${GITHUB_OUTPUT}"
+
+          TAG="v${VERSION}"
+          if git rev-parse "${TAG}" >/dev/null 2>&1; then
+            echo "Tag ${TAG} already exists. Choose a newer version." >&2
+            exit 1
+          fi
+
           echo "version=${VERSION}" >> "${GITHUB_OUTPUT}"
+          echo "tag=${TAG}" >> "${GITHUB_OUTPUT}"
           echo "asset=Jellyfin.Plugin.WatchMatch.zip" >> "${GITHUB_OUTPUT}"
+
+      - name: Apply release version to source files
+        shell: bash
+        run: |
+          set -euo pipefail
+          node <<'NODE'
+          const fs = require('fs');
+          const version = '${{ steps.meta.outputs.version }}';
+
+          const projectPath = 'server/Jellyfin.Plugin.WatchMatch/Jellyfin.Plugin.WatchMatch.csproj';
+          let project = fs.readFileSync(projectPath, 'utf8');
+          project = project.replace(/<Version>.*?<\/Version>/, `<Version>${version}</Version>`);
+          fs.writeFileSync(projectPath, project);
+
+          const buildPath = 'build.yaml';
+          let build = fs.readFileSync(buildPath, 'utf8');
+          build = build.replace(/^version:\s*.*$/m, `version: ${version}`);
+          fs.writeFileSync(buildPath, build);
+          NODE
 
       - name: Setup .NET
         uses: actions/setup-dotnet@v4
@@ -78,57 +113,71 @@ jobs:
         id: checksum
         shell: bash
         run: |
+          set -euo pipefail
           CHECKSUM="$(md5sum "artifacts/release/${{ steps.meta.outputs.asset }}" | awk '{print toupper($1)}')"
           echo "value=${CHECKSUM}" >> "${GITHUB_OUTPUT}"
 
       - name: Update plugin repository manifest
         shell: bash
         run: |
+          set -euo pipefail
           node <<'NODE'
           const fs = require('fs');
           const manifestPath = 'manifest.json';
           const manifest = JSON.parse(fs.readFileSync(manifestPath, 'utf8'));
-          if (!Array.isArray(manifest)) {
-            throw new Error('Jellyfin plugin repository manifest must be a JSON array.');
+          if (!Array.isArray(manifest) || !manifest[0]) {
+            throw new Error('Jellyfin plugin repository manifest must be a non-empty JSON array.');
           }
+
           const targetVersion = '${{ steps.meta.outputs.version }}';
-          
-          let versionEntry = manifest[0].versions.find(v => v.version === targetVersion);
-          if (!versionEntry) {
-            // Create a new entry by copying the targetAbi from the first one
-            versionEntry = {
-              version: targetVersion,
-              changelog: 'Automated release',
-              targetAbi: manifest[0].versions[0].targetAbi,
-              sourceUrl: '',
-              checksum: '',
-              timestamp: ''
-            };
-            manifest[0].versions.unshift(versionEntry);
-          }
-          
-          versionEntry.sourceUrl = 'https://github.com/${{ github.repository }}/releases/download/${{ steps.meta.outputs.tag }}/${{ steps.meta.outputs.asset }}';
-          versionEntry.checksum = '${{ steps.checksum.outputs.value }}';
-          versionEntry.timestamp = new Date().toISOString().replace(/\.\d{3}Z$/, 'Z');
-          
+          const tag = '${{ steps.meta.outputs.tag }}';
+          const asset = '${{ steps.meta.outputs.asset }}';
+          const checksum = '${{ steps.checksum.outputs.value }}';
+          const targetAbi = manifest[0].versions?.[0]?.targetAbi || '10.11.0.0';
+          manifest[0].versions = (manifest[0].versions || []).filter(entry => entry.version !== targetVersion);
+          manifest[0].versions.unshift({
+            version: targetVersion,
+            changelog: 'Automated release',
+            targetAbi,
+            sourceUrl: `https://github.com/${{ github.repository }}/releases/download/${tag}/${asset}`,
+            checksum,
+            timestamp: new Date().toISOString().replace(/\.\d{3}Z$/, 'Z')
+          });
+
           fs.writeFileSync(manifestPath, JSON.stringify(manifest, null, 2) + '\n');
           NODE
+
+      - name: Create release pull request
+        id: cpr
+        uses: peter-evans/create-pull-request@v6
+        with:
+          commit-message: "chore: release WatchMatch ${{ steps.meta.outputs.tag }}"
+          title: "chore: release WatchMatch ${{ steps.meta.outputs.tag }}"
+          branch: "chore/release-${{ steps.meta.outputs.tag }}"
+          body: |
+            Automated release preparation for `${{ steps.meta.outputs.tag }}`.
+
+            This PR updates:
+            - plugin assembly version
+            - `build.yaml`
+            - Jellyfin plugin repository manifest checksum/source URL
+
+            The installable ZIP is attached to the GitHub Release for `${{ steps.meta.outputs.tag }}`.
 
       - name: Create GitHub release
         env:
           GH_TOKEN: ${{ github.token }}
+        shell: bash
         run: |
-          gh release delete "${{ steps.meta.outputs.tag }}" --yes --cleanup-tag || true
-          git tag -f "${{ steps.meta.outputs.tag }}"
-          git push origin "${{ steps.meta.outputs.tag }}" --force
+          set -euo pipefail
+          RELEASE_SHA="${{ steps.cpr.outputs.pull-request-head-sha }}"
+          if [[ -z "${RELEASE_SHA}" ]]; then
+            echo "Release PR did not produce a head SHA." >&2
+            exit 1
+          fi
+
+          git tag "${{ steps.meta.outputs.tag }}" "${RELEASE_SHA}"
+          git push origin "${{ steps.meta.outputs.tag }}"
           gh release create "${{ steps.meta.outputs.tag }}" "artifacts/release/${{ steps.meta.outputs.asset }}" \
             --title "WatchMatch ${{ steps.meta.outputs.version }}" \
-            --notes "Automated plugin release. Check the plugin repository manifest for changelog details."
-
-      - name: Create Pull Request for Manifest
-        uses: peter-evans/create-pull-request@v6
-        with:
-          commit-message: "chore: update plugin manifest for ${{ steps.meta.outputs.tag }}"
-          title: "chore: update plugin manifest for ${{ steps.meta.outputs.tag }}"
-          branch: "chore/update-manifest-${{ steps.meta.outputs.tag }}"
-          body: "Automated manifest update for release ${{ steps.meta.outputs.tag }}."
+            --notes "Automated plugin release. Merge the generated manifest PR to publish this version through the Jellyfin plugin catalog."
