@@ -188,6 +188,28 @@
     font-size: 13px;
 }
 
+.watchmatch-autoplay-banner {
+    position: fixed;
+    top: 0;
+    left: 0;
+    right: 0;
+    z-index: 999999;
+    padding: 14px 24px;
+    background: linear-gradient(135deg, #00a4dc, #0070b8);
+    color: #fff;
+    font-size: 16px;
+    font-weight: 600;
+    text-align: center;
+    box-shadow: 0 4px 20px rgba(0,0,0,.4);
+    animation: wmSlideDown .3s ease-out;
+    display: none;
+}
+
+@keyframes wmSlideDown {
+    from { transform: translateY(-100%); }
+    to { transform: translateY(0); }
+}
+
 @media (max-width: 640px) {
     .watchmatch-launch {
         right: 16px;

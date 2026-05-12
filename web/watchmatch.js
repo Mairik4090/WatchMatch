@@ -59,34 +59,7 @@
                 return state.cachedGroupId ?? null;
             }
         },
-        playMovie(movieId) {
-            // Navigate to the movie detail page and auto-click the Play button.
-            // This is literally the same action as a user clicking Play, so
-            // SyncPlay intercepts and syncs the group automatically.
-            window.location.hash = `#/details?id=${movieId}`;
-            return new Promise((resolve, reject) => {
-                const timeout = setTimeout(() => {
-                    observer.disconnect();
-                    reject(new Error('Play button did not appear'));
-                }, 6000);
-
-                function tryClick() {
-                    const btn = document.querySelector('.btnPlay, [data-action="play"], .detailButton-content');
-                    if (btn) {
-                        clearTimeout(timeout);
-                        observer.disconnect();
-                        // Small delay so the page finishes rendering
-                        setTimeout(() => { btn.click(); resolve(); }, 300);
-                        return true;
-                    }
-                    return false;
-                }
-
-                if (tryClick()) return;
-                const observer = new MutationObserver(() => tryClick());
-                observer.observe(document.body, { childList: true, subtree: true });
-            });
-        },
+        // No playMovie method needed — playback is handled by navigateAndAutoPlay
         url(path) {
             return this.getApiClient().getUrl(path);
         },
@@ -278,24 +251,10 @@
         try {
             const result = await adapter.ajax(`WatchMatch/Session/${state.currentGroupId}/play`, 'POST');
             if (!result.startPlayback || !result.movieId) return;
-
-            const groupId = state.currentGroupId;
-            // Close modal first so the detail page renders cleanly
-            closeWatchMatch();
-
-            // Navigate to detail page and auto-click Play — same as user clicking Play
-            try {
-                await adapter.playMovie(result.movieId);
-            } catch (playErr) {
-                console.warn('WatchMatch: auto-play failed, user is on detail page:', playErr);
-            }
-
-            // Best-effort session completion
-            try {
-                await adapter.ajax(`WatchMatch/Session/${groupId}/play-complete`, 'POST');
-            } catch {
-                // ignore
-            }
+            // The server broadcasts PlayStarting to all clients via SSE.
+            // renderState will pick it up and call navigateAndAutoPlay for everyone.
+            // For the clicking client, renderState runs synchronously below:
+            await renderState(result);
         } catch (err) {
             console.error('WatchMatch play error:', err);
         } finally {
@@ -340,7 +299,14 @@
         }
 
         if (model.status === 'PlayStarting' || model.status === 'Completed') {
-            body.innerHTML = '<div class="watchmatch-status">Playback wird in SyncPlay gestartet.</div>';
+            // Navigate ALL clients to the movie detail page and auto-click Play.
+            const movieId = model.matchMovie?.id;
+            if (movieId) {
+                closeWatchMatch();
+                navigateAndAutoPlay(movieId);
+            } else {
+                body.innerHTML = '<div class="watchmatch-status">Playback wird gestartet...</div>';
+            }
             return;
         }
 
@@ -464,6 +430,43 @@
             clearTimeout(state.reconnectTimer);
             state.reconnectTimer = null;
         }
+    }
+
+    function navigateAndAutoPlay(movieId) {
+        // Navigate to the movie detail page
+        window.location.hash = `#/details?id=${movieId}`;
+
+        // Show a countdown overlay
+        let banner = document.querySelector('.watchmatch-autoplay-banner');
+        if (!banner) {
+            banner = document.createElement('div');
+            banner.className = 'watchmatch-autoplay-banner';
+            document.body.appendChild(banner);
+        }
+
+        let remaining = 5;
+        banner.textContent = `WatchMatch: Film wird in ${remaining}s gestartet...`;
+        banner.style.display = 'block';
+
+        const countdown = setInterval(() => {
+            remaining--;
+            if (remaining > 0) {
+                banner.textContent = `WatchMatch: Film wird in ${remaining}s gestartet...`;
+                return;
+            }
+            clearInterval(countdown);
+
+            // Try to find and click the Play button
+            const btn = document.querySelector('.btnPlay, [data-action="resume"], [data-action="play"]');
+            if (btn) {
+                banner.textContent = 'WatchMatch: Starte Wiedergabe...';
+                btn.click();
+                setTimeout(() => { banner.style.display = 'none'; }, 2000);
+            } else {
+                banner.textContent = 'WatchMatch: Klicke auf Play um zu starten';
+                setTimeout(() => { banner.style.display = 'none'; }, 5000);
+            }
+        }, 1000);
     }
 
     function escapeHtml(value) {
