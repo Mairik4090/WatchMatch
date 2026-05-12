@@ -9,4 +9,4 @@ description: Adds a WatchMatch flow to Jellyfin Web so SyncPlay groups can swipe
 category: General
 artifacts:
   - server/Jellyfin.Plugin.WatchMatch/bin/Release/net9.0/Jellyfin.Plugin.WatchMatch.dll
-changelog: Initial v1 scaffold for Jellyfin 10.11.x.
+changelog: Stabilize WatchMatch syncplay UI and realtime status updates.
