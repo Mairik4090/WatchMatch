@@ -115,13 +115,19 @@
     }
 
     async function injectWatchMatchMenu(menu) {
+        // Wait for the scroller to be added by Jellyfin
+        let scroller = null;
+        for (let i = 0; i < 20; i++) {
+            scroller = menu.querySelector('.actionSheetScroller');
+            if (scroller) break;
+            await new Promise(r => setTimeout(r, 50));
+        }
+        if (!scroller) return;
+
         // Ensure we have the latest group state
         const groupId = await adapter.getCurrentGroupId(true);
         state.currentGroupId = groupId;
         if (!groupId) return;
-
-        const scroller = menu.querySelector('.actionSheetScroller');
-        if (!scroller) return;
 
         // Prevent duplicate injection
         if (scroller.querySelector('.watchmatch-launch-menu')) return;
@@ -151,12 +157,12 @@
             e.stopPropagation();
             
             // Close the Jellyfin SyncPlay dialog
-            const closeBtn = menu.closest('.dialogContainer')?.querySelector('.btnCancel') || 
-                             menu.closest('.dialogContainer')?.querySelector('button[data-action="close"]');
+            const closeBtn = menu.closest('.dialogContainer, .actionSheet')?.querySelector('.btnCancel') || 
+                             menu.closest('.dialogContainer, .actionSheet')?.querySelector('button[data-action="close"]');
             if (closeBtn) closeBtn.click();
             else {
                 document.querySelector('.dialogBackdrop')?.remove();
-                menu.closest('.dialogContainer')?.remove();
+                menu.closest('.dialogContainer, .actionSheet')?.remove();
             }
 
             if (!isRunning) openWatchMatch();
@@ -485,7 +491,7 @@
     const dialogObserver = new MutationObserver((mutations) => {
         for (const mutation of mutations) {
             for (const node of mutation.addedNodes) {
-                if (node.nodeType === 1 && node.classList.contains('dialogContainer')) {
+                if (node.nodeType === 1) {
                     const menu = node.querySelector('.syncPlayGroupMenu') || (node.classList.contains('syncPlayGroupMenu') ? node : null);
                     if (menu) injectWatchMatchMenu(menu);
                 }
