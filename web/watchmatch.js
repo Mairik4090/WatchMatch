@@ -114,27 +114,31 @@
         }
     }
 
+    let isInjecting = false;
     async function injectWatchMatchMenu(menu) {
-        // Wait for the scroller to be added by Jellyfin
-        let scroller = null;
-        for (let i = 0; i < 20; i++) {
-            scroller = menu.querySelector('.actionSheetScroller');
-            if (scroller) break;
-            await new Promise(r => setTimeout(r, 50));
-        }
-        if (!scroller) return;
+        if (isInjecting) return;
+        isInjecting = true;
+        try {
+            // Wait for the scroller to be added by Jellyfin
+            let scroller = null;
+            for (let i = 0; i < 20; i++) {
+                scroller = menu.querySelector('.actionSheetScroller');
+                if (scroller) break;
+                await new Promise(r => setTimeout(r, 50));
+            }
+            if (!scroller) return;
 
-        // Ensure we have the latest group state
-        const groupId = await adapter.getCurrentGroupId(true);
-        state.currentGroupId = groupId;
-        if (!groupId) return;
+            // Ensure we have the latest group state
+            const groupId = await adapter.getCurrentGroupId(true);
+            state.currentGroupId = groupId;
+            if (!groupId) return;
 
-        // Prevent duplicate injection
-        if (scroller.querySelector('.watchmatch-launch-menu')) return;
+            // Prevent duplicate injection
+            if (scroller.querySelector('.watchmatch-launch-menu')) return;
 
-        const btn = document.createElement('button');
-        btn.type = 'button';
-        btn.className = 'listItem listItem-button actionSheetMenuItem listItem-border emby-button watchmatch-launch-menu';
+            const btn = document.createElement('button');
+            btn.type = 'button';
+            btn.className = 'listItem listItem-button actionSheetMenuItem listItem-border emby-button watchmatch-launch-menu';
         
         let isRunning = false;
         try {
@@ -170,6 +174,9 @@
 
         // Insert near the top
         scroller.insertBefore(btn, scroller.firstChild);
+        } finally {
+            isInjecting = false;
+        }
     }
 
     function setActionButtons(disabled) {
@@ -492,8 +499,15 @@
         for (const mutation of mutations) {
             for (const node of mutation.addedNodes) {
                 if (node.nodeType === 1) {
-                    const menu = node.querySelector('.syncPlayGroupMenu') || (node.classList.contains('syncPlayGroupMenu') ? node : null);
-                    if (menu) injectWatchMatchMenu(menu);
+                    if (node.classList.contains('syncPlayGroupMenu')) {
+                        injectWatchMatchMenu(node);
+                    } else if (node.classList.contains('actionSheetScroller')) {
+                        const menu = node.closest('.syncPlayGroupMenu');
+                        if (menu) injectWatchMatchMenu(menu);
+                    } else if (node.querySelector) {
+                        const menu = node.querySelector('.syncPlayGroupMenu');
+                        if (menu) injectWatchMatchMenu(menu);
+                    }
                 }
             }
         }
@@ -503,8 +517,8 @@
     ensureUi();
 
     if (document.readyState === 'loading') {
-        document.addEventListener('DOMContentLoaded', () => dialogObserver.observe(document.body, { childList: true }));
+        document.addEventListener('DOMContentLoaded', () => dialogObserver.observe(document.body, { childList: true, subtree: true }));
     } else {
-        dialogObserver.observe(document.body, { childList: true });
+        dialogObserver.observe(document.body, { childList: true, subtree: true });
     }
 }());

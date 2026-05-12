@@ -2,7 +2,7 @@
   <PropertyGroup>
     <AssemblyName>Jellyfin.Plugin.WatchMatch</AssemblyName>
     <RootNamespace>Jellyfin.Plugin.WatchMatch</RootNamespace>
-    <Version>0.1.0.10</Version>
+    <Version>0.1.0.11</Version>
     <GenerateDocumentationFile>true</GenerateDocumentationFile>
     <CopyLocalLockFileAssemblies>false</CopyLocalLockFileAssemblies>
   </PropertyGroup>
